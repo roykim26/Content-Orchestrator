@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyc.*
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.env
+data/
+logs/
+*.log
+*.db
+*.db-journal
+_write_probe.txt

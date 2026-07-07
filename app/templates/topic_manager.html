@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Topic Manager</title>
+  <link rel="stylesheet" href="/static/topic-manager.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Content Operations</p>
+        <h1>Topic Manager</h1>
+        <p class="hero-text">
+          Curate weekly topics, import campaign batches, and turn strategy into executable platform tasks from one polished workspace.
+        </p>
+      </div>
+      <div class="hero-panel">
+        <div class="metric-card">
+          <span class="metric-label">Total Topics</span>
+          <strong id="metric-total">0</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Ready / Planned</span>
+          <strong id="metric-active">0</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Draft Topics</span>
+          <strong id="metric-draft">0</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel-form">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Single Topic</p>
+            <h2>Create Topic</h2>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="single-plan" checked>
+            <span>Auto plan after create</span>
+          </label>
+        </div>
+
+        <form id="single-topic-form" class="topic-form">
+          <div class="field-grid">
+            <label>
+              <span>Master Topic</span>
+              <input name="master_topic" placeholder="How to operationalize content ops automation" required>
+            </label>
+            <label>
+              <span>Target Keyword</span>
+              <input name="target_keyword" placeholder="content ops automation" required>
+            </label>
+            <label>
+              <span>Topic Cluster</span>
+              <input name="topic_cluster" placeholder="real_estate_ai_workflow" required>
+            </label>
+            <label>
+              <span>Business Goal</span>
+              <input name="business_goal" placeholder="technical_authority" required>
+            </label>
+            <label>
+              <span>Priority</span>
+              <select name="priority">
+                <option value="S">S</option>
+                <option value="A" selected>A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select name="status">
+                <option value="ready" selected>ready</option>
+                <option value="draft">draft</option>
+                <option value="planned">planned</option>
+              </select>
+            </label>
+            <label>
+              <span>Note Account</span>
+              <select name="note_account">
+                <option value="">Unassigned</option>
+                <option value="note_a">note_a</option>
+                <option value="note_b">note_b</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>Target Platforms</span>
+            <input name="target_platforms" placeholder="note,x,hatena" required>
+          </label>
+
+          <label>
+            <span>Brief</span>
+            <textarea name="brief" rows="4" placeholder="Operator note, objective, or angle guidance"></textarea>
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="primary">Create Topic</button>
+            <button type="reset" class="ghost">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel panel-import">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Batch Import</p>
+            <h2>Import Topic Set</h2>
+          </div>
+          <a class="template-link" href="/static/topic-template-note.txt" download>Field Guide</a>
+        </div>
+
+        <div class="import-tabs">
+          <button class="tab is-active" data-mode="file" type="button">Upload File</button>
+          <button class="tab" data-mode="paste" type="button">Paste CSV / JSON</button>
+        </div>
+
+        <form id="batch-import-form" class="batch-form">
+          <div id="import-file-pane" class="import-pane is-active">
+            <label class="upload-zone">
+              <input id="import-file" type="file" accept=".csv,.json,.xlsx,.xlsm">
+              <span class="upload-title">Drop a topic file here or click to browse</span>
+              <span class="upload-help">Supports CSV, JSON, XLSX, XLSM</span>
+            </label>
+          </div>
+
+          <div id="import-paste-pane" class="import-pane">
+            <label>
+              <span>Format Hint</span>
+              <select id="filename-hint">
+                <option value="topics.csv">CSV</option>
+                <option value="topics.json">JSON</option>
+              </select>
+            </label>
+            <label>
+              <span>Paste Content</span>
+              <textarea id="import-text" rows="10" placeholder="Paste CSV with headers or JSON array"></textarea>
+            </label>
+          </div>
+
+          <div class="option-row">
+            <label class="toggle">
+              <input type="checkbox" id="import-plan" checked>
+              <span>Auto plan imported topics</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="import-skip-existing" checked>
+              <span>Skip duplicates</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="import-dry-run">
+              <span>Dry run only</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="primary">Run Import</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <section class="panel panel-results">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Execution Feedback</p>
+          <h2>Activity Stream</h2>
+        </div>
+      </div>
+      <div id="flash" class="flash hidden"></div>
+      <div id="import-results" class="result-list empty-state">No import run yet.</div>
+    </section>
+
+    <section class="panel panel-table">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Library</p>
+          <h2>Recent Topics</h2>
+        </div>
+        <div class="table-controls">
+          <input id="topic-search" type="search" placeholder="Search by topic or keyword">
+          <select id="status-filter">
+            <option value="">All statuses</option>
+            <option value="draft">draft</option>
+            <option value="ready">ready</option>
+            <option value="planned">planned</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Topic</th>
+              <th>Keyword</th>
+              <th>Cluster</th>
+              <th>Platforms</th>
+              <th>Note Account</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="topic-table-body">
+            <tr><td colspan="8" class="empty-state">Loading topics...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <aside id="detail-drawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-backdrop" data-close-drawer="true"></div>
+    <div class="drawer-panel">
+      <button class="drawer-close" id="drawer-close" type="button" aria-label="Close detail view">×</button>
+      <div id="drawer-content" class="drawer-content">
+        <div class="empty-state">Select a topic to inspect tasks and artifacts.</div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="/static/topic-manager.js"></script>
+</body>
+</html>

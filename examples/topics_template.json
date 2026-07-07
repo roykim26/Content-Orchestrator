@@ -1,0 +1,22 @@
+[
+  {
+    "master_topic": "How to operationalize content ops automation",
+    "topic_cluster": "real_estate_ai_workflow",
+    "business_goal": "technical_authority",
+    "target_keyword": "content ops automation",
+    "priority": "A",
+    "target_platforms": ["note", "x", "hatena"],
+    "status": "ready",
+    "brief": "Manual weekly topic batch"
+  },
+  {
+    "master_topic": "SEO repurposing checklist for lean teams",
+    "topic_cluster": "seo_distribution",
+    "business_goal": "seo_backlink",
+    "target_keyword": "seo repurposing checklist",
+    "priority": "A",
+    "target_platforms": ["hatena", "note", "bluesky"],
+    "status": "ready",
+    "brief": "Focus on reusable operator workflow"
+  }
+]

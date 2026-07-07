@@ -1,0 +1,15 @@
+Required fields:
+- master_topic
+- topic_cluster
+- business_goal
+- target_keyword
+
+Recommended fields:
+- priority
+- target_platforms
+- status
+- brief
+
+Batch import supports CSV, JSON, XLSX, XLSM.
+Use comma-separated values for target_platforms, for example:
+note,x,hatena
