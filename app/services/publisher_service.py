@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import String, cast
+from sqlalchemy import String, cast, or_
 from sqlmodel import Session, select
 
 from app.core.exceptions import InvalidStateError
@@ -115,13 +115,42 @@ class PublisherService:
         account_key = str(account or note_account or "").strip()
         if not account_key:
             return statement
+        aliases = PublisherService._account_aliases(platform, account_key)
         if platform.lower() == "note":
-            return statement.where(
-                cast(ContentArtifact.extra_metadata["note_account"], String) == f'"{account_key}"'
-            )
-        return statement.where(
-            cast(ContentArtifact.extra_metadata["account"], String) == f'"{account_key}"'
-        )
+            conditions = [
+                cast(ContentArtifact.extra_metadata["note_account"], String) == f'"{alias}"'
+                for alias in aliases
+            ]
+        elif platform.lower() == "hatena":
+            conditions = []
+            for alias in aliases:
+                conditions.extend(
+                    [
+                        cast(ContentArtifact.extra_metadata["account"], String) == f'"{alias}"',
+                        cast(ContentArtifact.extra_metadata["note_account"], String) == f'"{alias}"',
+                    ]
+                )
+        else:
+            conditions = [
+                cast(ContentArtifact.extra_metadata["account"], String) == f'"{alias}"'
+                for alias in aliases
+            ]
+        return statement.where(or_(*conditions))
+
+    @staticmethod
+    def _account_aliases(platform: str, account_key: str) -> list[str]:
+        aliases = [account_key]
+        if platform.lower() == "hatena":
+            mapping = {
+                "A": "note_a",
+                "B": "note_b",
+                "note_a": "A",
+                "note_b": "B",
+            }
+            mapped = mapping.get(account_key)
+            if mapped:
+                aliases.append(mapped)
+        return aliases
 
     def write_publish_result(
         self,
@@ -134,7 +163,13 @@ class PublisherService:
         payload = self._normalize_publish_result(artifact, payload)
         is_draft_result = (payload.status or "").strip().lower() == "draft_created"
         is_success_result = payload.published or is_draft_result
-        if artifact.status not in {"publish_pending", "publishing", "draft_created", "failed"} and is_success_result:
+        if artifact.status not in {
+            "publish_pending",
+            "publishing",
+            "draft_created",
+            "failed",
+            "published_unverified",
+        } and is_success_result:
             raise InvalidStateError(
                 f"Artifact in status '{artifact.status}' cannot be marked as {payload.status!r}."
             )

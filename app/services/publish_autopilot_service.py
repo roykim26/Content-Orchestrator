@@ -108,7 +108,7 @@ class PublishAutopilotService:
             expected_health={
                 "status": "healthy",
                 "orchestrator_mode_enabled": True,
-                "app_instance_label": "8221_orch_publish_zenn",
+                "app_instance_label": "8221_orch_publish_platforms",
             },
         ),
         "hatena_a": PublishLane(
@@ -120,7 +120,7 @@ class PublishAutopilotService:
             expected_health={
                 "status": "healthy",
                 "orchestrator_mode_enabled": True,
-                "app_instance_label": "8221_orch_publish_hatena_a",
+                "app_instance_label": "8221_orch_publish_platforms",
             },
         ),
         "hatena_b": PublishLane(
@@ -132,7 +132,7 @@ class PublishAutopilotService:
             expected_health={
                 "status": "healthy",
                 "orchestrator_mode_enabled": True,
-                "app_instance_label": "8221_orch_publish_hatena_b",
+                "app_instance_label": "8221_orch_publish_platforms",
             },
         ),
         "livedoor": PublishLane(
@@ -543,6 +543,10 @@ class PublishAutopilotService:
         metadata["account"] = lane.account
         if lane.platform == "note":
             metadata["note_account"] = lane.account
+        elif lane.platform == "hatena":
+            note_account = self._hatena_note_account(lane.account)
+            if note_account:
+                metadata["note_account"] = note_account
         artifact.extra_metadata = metadata
         artifact.updated_at = datetime.now(timezone.utc)
         self.session.add(artifact)
@@ -562,6 +566,8 @@ class PublishAutopilotService:
             if lane.platform not in topic.target_platforms:
                 continue
             if lane.platform == "note" and lane.account and topic.note_account != lane.account:
+                continue
+            if lane.platform == "hatena" and lane.account and not self._topic_matches_lane_account(topic, lane):
                 continue
             eligible.append(topic)
         active_clusters = self._active_topic_clusters()
@@ -611,16 +617,53 @@ class PublishAutopilotService:
             )
         for artifact in artifacts:
             if lane.account:
-                account_key = "note_account" if lane.platform == "note" else "account"
-                artifact_account = str(artifact.extra_metadata.get(account_key) or "").strip()
-                if artifact_account != lane.account:
+                if not self._artifact_matches_lane_account(artifact, lane):
                     continue
             return artifact
         return None
 
+    @classmethod
+    def _artifact_matches_lane_account(cls, artifact: ContentArtifact, lane: PublishLane) -> bool:
+        aliases = set(cls._lane_account_aliases(lane))
+        if not aliases:
+            return True
+        account_values = {str(artifact.extra_metadata.get("account") or "").strip()}
+        if lane.platform in {"note", "hatena"}:
+            account_values.add(str(artifact.extra_metadata.get("note_account") or "").strip())
+        return bool(aliases.intersection(account_values))
+
+    @classmethod
+    def _topic_matches_lane_account(cls, topic: Topic, lane: PublishLane) -> bool:
+        aliases = set(cls._lane_account_aliases(lane))
+        if not aliases:
+            return True
+        return str(topic.note_account or "").strip() in aliases
+
+    @classmethod
+    def _lane_account_aliases(cls, lane: PublishLane) -> list[str]:
+        account = str(lane.account or "").strip()
+        if not account:
+            return []
+        aliases = [account]
+        if lane.platform == "hatena":
+            note_account = cls._hatena_note_account(account)
+            if note_account:
+                aliases.append(note_account)
+        return aliases
+
+    @staticmethod
+    def _hatena_note_account(account: str | None) -> str:
+        return {
+            "A": "note_a",
+            "B": "note_b",
+            "note_a": "note_a",
+            "note_b": "note_b",
+        }.get(str(account or "").strip(), "")
+
     def _trigger_publisher(self, lane: PublishLane) -> dict[str, object]:
+        params = {"account": lane.account} if lane.account and lane.platform in {"hatena"} else None
         with httpx.Client(timeout=30, trust_env=False) as client:
-            response = client.post(lane.trigger_url)
+            response = client.post(lane.trigger_url, params=params)
         if response.status_code >= 400:
             raise RuntimeError(f"Publisher trigger failed: HTTP {response.status_code}: {response.text}")
         payload = response.json()

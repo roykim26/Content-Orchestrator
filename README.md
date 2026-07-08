@@ -171,6 +171,7 @@ The publish autopilot coordinates the currently integrated publish lanes:
 - `note_a`
 - `note_b`
 - `ameba`
+- `hatena_b`
 
 It recovers stale `publishing` artifacts and stale `running` tasks, ensures each lane has a `publish_pending` artifact, triggers the publisher service, waits for the final artifact status, and records each run in `publishrun`.
 

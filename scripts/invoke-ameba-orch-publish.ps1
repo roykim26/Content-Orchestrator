@@ -82,6 +82,38 @@ function Wait-OrchestratorHealthy {
     throw "Content Orchestrator did not become healthy on 127.0.0.1:8020."
 }
 
+function Resolve-PlaywrightProxyServer {
+    $configured = [Environment]::GetEnvironmentVariable("PLAYWRIGHT_PROXY_SERVER", "Process")
+    if (-not [string]::IsNullOrWhiteSpace($configured) -and $configured -notmatch "127\.0\.0\.1:9(?:/)?$") {
+        return $configured.Trim()
+    }
+
+    try {
+        $internetSettings = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction Stop
+        if ($internetSettings.ProxyEnable -ne 1 -or [string]::IsNullOrWhiteSpace($internetSettings.ProxyServer)) {
+            return ""
+        }
+
+        $proxyServer = [string]$internetSettings.ProxyServer
+        if ($proxyServer -match "=") {
+            $match = [regex]::Match($proxyServer, "(?:https?|socks)=([^;]+)")
+            if ($match.Success) {
+                $proxyServer = $match.Groups[1].Value
+            } else {
+                return ""
+            }
+        }
+
+        $proxyServer = $proxyServer.Trim()
+        if ($proxyServer -match "^[a-zA-Z][a-zA-Z0-9+.-]*://") {
+            return $proxyServer
+        }
+        return "http://$proxyServer"
+    } catch {
+        return ""
+    }
+}
+
 function Start-AmebaPublisher {
     $env:APP_RUN_MODE = "ameba"
     $env:APP_PORT = [string]$port
@@ -97,7 +129,14 @@ function Start-AmebaPublisher {
     $env:AMEBA_DAILY_RUN_ENABLED = "false"
     $env:PUBLISH_CHECK_ENABLED = "false"
     $env:AMEBA_PUBLISH_MODE = "publish"
-    [Environment]::SetEnvironmentVariable("PLAYWRIGHT_PROXY_SERVER", $null, "Process")
+    $playwrightProxyServer = Resolve-PlaywrightProxyServer
+    if ([string]::IsNullOrWhiteSpace($playwrightProxyServer)) {
+        [Environment]::SetEnvironmentVariable("PLAYWRIGHT_PROXY_SERVER", $null, "Process")
+        Write-Log "Ameba Playwright proxy: disabled."
+    } else {
+        $env:PLAYWRIGHT_PROXY_SERVER = $playwrightProxyServer
+        Write-Log "Ameba Playwright proxy: enabled."
+    }
 
     Start-Process `
         -FilePath $pythonExe `

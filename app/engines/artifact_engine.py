@@ -99,7 +99,7 @@ class ArtifactEngine:
         if response_format_json:
             request_body["response_format"] = {"type": "json_object"}
 
-        with httpx.Client(timeout=180, trust_env=False) as client:
+        with httpx.Client(timeout=360, trust_env=False) as client:
             response = client.post(
                 f"{base_url}/chat/completions",
                 headers={

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("note", "ameba")]
+    [ValidateSet("note", "ameba", "hatena", "zenn")]
     [string]$Platform,
     [string]$Account = "",
     [int]$TopicLimit = 20
@@ -28,16 +28,65 @@ function Invoke-Json {
     return Invoke-RestMethod @params
 }
 
+function Get-AccountAliases {
+    if (-not $Account) {
+        return @()
+    }
+    $aliases = @($Account)
+    if ($Platform -eq "hatena") {
+        if ($Account -eq "A") {
+            $aliases += "note_a"
+        } elseif ($Account -eq "B") {
+            $aliases += "note_b"
+        } elseif ($Account -eq "note_a") {
+            $aliases += "A"
+        } elseif ($Account -eq "note_b") {
+            $aliases += "B"
+        }
+    }
+    return $aliases | Select-Object -Unique
+}
+
+function Test-ArtifactAccount {
+    param([object]$Artifact)
+
+    if (-not $Account) {
+        return $true
+    }
+    $aliases = @(Get-AccountAliases)
+    $artifactAccounts = @($Artifact.metadata.account)
+    if ($Platform -eq "note" -or $Platform -eq "hatena") {
+        $artifactAccounts += $Artifact.metadata.note_account
+    }
+    foreach ($artifactAccount in $artifactAccounts) {
+        if ($artifactAccount -and $artifactAccount -in $aliases) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-TopicAccount {
+    param([object]$Topic)
+
+    if (-not $Account) {
+        return $true
+    }
+    if ($Platform -ne "note" -and $Platform -ne "hatena") {
+        return $true
+    }
+    $aliases = @(Get-AccountAliases)
+    return ($Topic.note_account -in $aliases)
+}
+
 function Get-PendingArtifact {
     $artifacts = Invoke-Json -Uri "$baseUrl/artifacts?status=publish_pending" -TimeoutSec 15
     foreach ($artifact in @($artifacts)) {
         if ($artifact.platform -ne $Platform) {
             continue
         }
-        if ($Platform -eq "note" -and $Account) {
-            if ($artifact.metadata.note_account -ne $Account) {
-                continue
-            }
+        if (-not (Test-ArtifactAccount -Artifact $artifact)) {
+            continue
         }
         return $artifact
     }
@@ -60,10 +109,8 @@ function Get-RetryableFailedArtifact {
         if ([datetime]$artifact.updated_at -lt $cutoff) {
             continue
         }
-        if ($Platform -eq "note" -and $Account) {
-            if ($artifact.metadata.note_account -ne $Account) {
-                continue
-            }
+        if (-not (Test-ArtifactAccount -Artifact $artifact)) {
+            continue
         }
         return $artifact
     }
@@ -114,7 +161,7 @@ foreach ($topic in @($topics)) {
     if ($Platform -notin @($topic.target_platforms)) {
         continue
     }
-    if ($Platform -eq "note" -and $Account -and $topic.note_account -ne $Account) {
+    if (-not (Test-TopicAccount -Topic $topic)) {
         continue
     }
 
@@ -129,7 +176,7 @@ foreach ($topic in @($topics)) {
         throw "Generation task $($task.id) did not return artifact_id."
     }
 
-    if ($Platform -eq "note") {
+    if ($Platform -in @("note", "ameba", "hatena", "zenn")) {
         Invoke-Json -Uri "$baseUrl/artifacts/$($result.artifact_id)/approve" -Method "POST" -TimeoutSec 30 | Out-Null
     }
 

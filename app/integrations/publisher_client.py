@@ -18,14 +18,23 @@ class PublisherClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def claim_artifacts(self, platform: str, consumer_name: str, limit: int = 1) -> dict[str, Any]:
+    def claim_artifacts(
+        self,
+        platform: str,
+        consumer_name: str,
+        limit: int = 1,
+        account: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "platform": platform,
+            "consumer_name": consumer_name,
+            "limit": limit,
+        }
+        if account:
+            payload["account"] = account
         response = httpx.post(
             f"{self.base_url.rstrip('/')}/publisher/claims",
-            json={
-                "platform": platform,
-                "consumer_name": consumer_name,
-                "limit": limit,
-            },
+            json=payload,
             headers=self._headers(),
             timeout=self.timeout,
         )
