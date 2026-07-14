@@ -274,13 +274,51 @@ class TopicRefillService:
             goal = str(entry["business_goal"]).strip()
             priority = str(entry.get("priority", "A") or "A").strip().upper()
             templates = entry.get("title_templates", [])
+            article_type = entry.get("article_type")
+            content_focus = entry.get("content_focus")
+            scenes = [str(item).strip() for item in entry.get("scenes", []) if str(item).strip()]
+            extra_rules = entry.get("extra_rules")
+            if cluster == "exam_module_launch":
+                templates = [
+                    "Ukamiruで問題演習を始める5ステップ｜{keyword}",
+                    "{keyword}をUkamiruで進めるときの確認ポイント",
+                    "Ukamiruで解説・弱点復習・模試を使う流れ｜{keyword}",
+                ]
+                article_type = "Ukamiru利用ガイド・学習導線提案"
+                content_focus = (
+                    "Ukamiruの確認済み機能だけを使い、資格選択、最初の問題演習、"
+                    "全選択肢の解説確認、弱点バンクでの復習、模試での仕上げを"
+                    "具体的な行動順に説明する。"
+                )
+                scenes = ["初回利用", "問題演習", "全選択肢の解説確認", "弱点復習", "模試"]
+                extra_rules = (
+                    "新機能や新モジュールとは書かない。手順を約束するタイトルでは、"
+                    "実際の利用行動を5ステップで説明し、確認済み製品事実以外は書かない。"
+                )
             strategy_keywords = self.signal_service.resolve_keywords_for_strategy(entry)
 
             for keyword_item in strategy_keywords:
                 keyword = keyword_item.keyword.strip()
                 if not keyword:
                     continue
-                platforms = sorted(set(base_platforms + matched_deficit_platforms + keyword_item.target_platforms))
+                requested_platforms = sorted(
+                    set(base_platforms + matched_deficit_platforms + keyword_item.target_platforms)
+                )
+                long_form_platforms = {"ameba", "hatena", "livedoor", "note", "zenn"}
+                requested_long_form = [
+                    platform for platform in requested_platforms if platform in long_form_platforms
+                ]
+                primary_long_form = None
+                if requested_long_form:
+                    primary_long_form = max(
+                        requested_long_form,
+                        key=lambda platform: (deficits.get(platform, 0), platform in matched_deficit_platforms),
+                    )
+                platforms = [
+                    platform
+                    for platform in requested_platforms
+                    if platform not in long_form_platforms or platform == primary_long_form
+                ]
                 secondary_keywords = self._secondary_keywords(keyword, keyword_item.source_details)
                 for template in templates:
                     master_topic = str(template).format(keyword=keyword).strip()
@@ -323,14 +361,14 @@ class TopicRefillService:
                             secondary_keyword=secondary_keywords[0] if secondary_keywords else None,
                             secondary_keywords=secondary_keywords,
                             target_audience=entry.get("target_audience"),
-                            article_type=entry.get("article_type"),
-                            content_focus=entry.get("content_focus"),
-                            scenes=[str(item).strip() for item in entry.get("scenes", []) if str(item).strip()],
+                            article_type=article_type,
+                            content_focus=content_focus,
+                            scenes=scenes,
                             target_url=entry.get("target_url"),
                             brand_name=entry.get("brand_name"),
                             site=entry.get("site"),
                             language=entry.get("language"),
-                            extra_rules=entry.get("extra_rules"),
+                            extra_rules=extra_rules,
                             priority=priority,
                             target_platforms=platforms,
                             status=str(refill_config["status"]),

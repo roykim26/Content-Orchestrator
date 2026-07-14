@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     topic_selection_cron: str = "0 9 * * 1"
     enable_topic_refill_scheduler: bool = True
     topic_refill_cron: str = "45 16 * * mon-fri"
-    publish_autopilot_lanes: str = "note_a,note_b,ameba,x_ta,bluesky_ta,hatena_b"
+    publish_autopilot_lanes: str = "note_a,note_b,ameba,x_ta,bluesky_ta,zenn,hatena_a,hatena_b"
     active_topic_clusters: str = ""
     automation_timezone: str = "Asia/Shanghai"
     feishu_base_url: str = "https://open.feishu.cn"

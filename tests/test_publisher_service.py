@@ -1,3 +1,4 @@
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -7,6 +8,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.models.artifact import ArtifactClaimRequest, ArtifactPublishResult, ContentArtifact
 from app.integrations.publisher_client import PublisherClient
 from app.models.topic import Topic
+from app.platform_publishers.adapters import HatenaPublisher
 from app.services.publish_autopilot_service import PublishAutopilotService
 from app.services.publisher_service import PublisherService
 
@@ -127,10 +129,24 @@ class PublisherServiceTest(unittest.TestCase):
 
         self.assertEqual([artifact.id for artifact in artifacts], ["art_hatena_note_b"])
 
+    def test_hatena_blog_id_normalizes_full_url(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "HATENA_ID_B": "yoyoberlinda",
+                "HATENA_BLOG_ID_B": "https://takkenai.hatenablog.com/",
+                "HATENA_API_KEY_B": "secret",
+            },
+            clear=False,
+        ):
+            cfg = HatenaPublisher(account="B")._config("B")
+
+        self.assertEqual(cfg["blog_id"], "takkenai.hatenablog.com")
+
     def test_default_autopilot_lanes_follow_configured_rollout(self) -> None:
         self.assertEqual(
             PublishAutopilotService._default_lane_names(),
-            ["note_a", "note_b", "ameba", "x_ta", "bluesky_ta", "hatena_b"],
+            ["note_a", "note_b", "ameba", "x_ta", "bluesky_ta", "zenn", "hatena_a", "hatena_b"],
         )
 
     def test_autopilot_script_all_uses_configured_lane_rollout(self) -> None:
@@ -140,6 +156,14 @@ class PublisherServiceTest(unittest.TestCase):
         self.assertIn('"bluesky_ta"', script)
         self.assertIn("PUBLISH_AUTOPILOT_LANES", script)
         self.assertIn("$lanes = Get-ConfiguredAutopilotLanes", script)
+
+    def test_autopilot_script_keeps_healthy_lanes_when_one_publisher_is_unavailable(self) -> None:
+        script = (ROOT_DIR / "scripts" / "invoke-publish-autopilot.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("$unavailableLanes = @()", script)
+        self.assertIn("Skipping unavailable lane $laneName; other healthy lanes will continue", script)
+        self.assertIn("$apiLanes += $laneName", script)
+        self.assertIn("$failed.Count -gt 0 -or $unavailableLanes.Count -gt 0", script)
 
     def test_future_lanes_are_registered(self) -> None:
         self.assertIn("x_ta", PublishAutopilotService.LANES)

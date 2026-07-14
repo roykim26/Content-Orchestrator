@@ -2,6 +2,33 @@
 
 Phase 1 scaffold for the TakkenAI content operations platform.
 
+## Content quality and product-fact controls
+
+Long-form generation now uses the platform prompt under `app/prompts/<platform>/system.md`
+and records prompt version `v2-seo-quality`. Ukamiru product claims and exam deep-link
+routes come from `app/content_facts/ukamiru_product_facts.json`.
+
+Before publishing, the quality gate checks:
+
+- verbatim space-separated Japanese search queries;
+- titles that promise steps without actionable numbered steps;
+- claims forbidden by the verified product fact file;
+- missing or mismatched target links;
+- lack of concrete information;
+- high cross-platform similarity for the same topic.
+
+Artifacts scoring below 75 or containing blocking errors remain in `review_pending`.
+Product launches, new features, usage guides, legal/statistical claims, and configured
+high-risk clusters require a named human reviewer. The publisher claim path repeats the
+quality check so `publish_pending` cannot bypass the gate.
+
+Audit existing artifacts without changing them:
+
+```powershell
+python scripts/audit_content_quality.py --published-only --limit 100
+python scripts/audit_content_quality.py --platform ameba --published-only
+```
+
 ## Features
 
 - Topic management

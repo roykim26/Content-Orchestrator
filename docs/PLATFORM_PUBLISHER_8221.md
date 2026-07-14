@@ -73,6 +73,11 @@ Account-specific values are preferred when running `hatena_a` or `hatena_b`:
 - `HATENA_ID_A`, `HATENA_BLOG_ID_A`, `HATENA_API_KEY_A`
 - `HATENA_ID_B`, `HATENA_BLOG_ID_B`, `HATENA_API_KEY_B`
 
+`HATENA_BLOG_ID` values may be provided either as the Hatena blog ID
+(`takkenai.hatenablog.com`) or as a full blog URL
+(`https://takkenai.hatenablog.com/`); the publisher normalizes full URLs
+before calling the Hatena API.
+
 The existing `zenn-bot` names are also supported:
 
 - A account: `HATENA_ID`, `HATENA_BLOG_ID`, `HATENA_API_KEY`

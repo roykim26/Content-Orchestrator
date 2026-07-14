@@ -9,11 +9,14 @@ from app.models.artifact import (
     ArtifactReviewRequest,
     ContentArtifact,
 )
+from app.models.topic import Topic
+from app.services.content_quality_service import ContentQualityService
 
 
 class ArtifactService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.content_quality = ContentQualityService()
 
     def list_artifacts(
         self,
@@ -44,7 +47,9 @@ class ArtifactService:
         if payload.status == "publish_pending" and not payload.reviewed:
             raise InvalidStateError("Artifact must be reviewed before entering publish_pending state.")
         if payload.status == "publish_pending":
-            self._validate_publish_ready(artifact)
+            if not str(payload.reviewed_by or "").strip():
+                raise InvalidStateError("Manual review requires reviewed_by before publishing.")
+            self._validate_publish_ready(artifact, automated=False)
         artifact.reviewed = payload.reviewed
         artifact.reviewed_by = payload.reviewed_by
         artifact.review_notes = payload.review_notes
@@ -63,8 +68,9 @@ class ArtifactService:
             raise InvalidStateError(
                 f"Artifact in status '{artifact.status}' cannot be approved for publishing."
             )
-        self._validate_publish_ready(artifact)
+        self._validate_publish_ready(artifact, automated=True)
         artifact.reviewed = True
+        artifact.reviewed_by = "publish-autopilot-quality-gate"
         artifact.status = "publish_pending"
         artifact.updated_at = datetime.now(timezone.utc)
         self.session.add(artifact)
@@ -86,7 +92,7 @@ class ArtifactService:
             )
         if not artifact.reviewed:
             raise InvalidStateError("Artifact must be reviewed before re-queueing for publishing.")
-        self._validate_publish_ready(artifact)
+        self._validate_publish_ready(artifact, automated=False)
 
         note_parts: list[str] = []
         if payload.reason:
@@ -115,16 +121,74 @@ class ArtifactService:
         self.session.refresh(artifact)
         return artifact
 
-    def _validate_publish_ready(self, artifact: ContentArtifact) -> None:
-        if artifact.platform != "note":
-            return
-        note_account = str(artifact.extra_metadata.get("note_account") or "").strip()
-        if not note_account:
-            raise InvalidStateError("note artifact requires note_account before publishing.")
-        if note_account not in {"note_a", "note_b"}:
-            raise InvalidStateError(
-                f"note artifact has unsupported note_account '{note_account}'. Expected note_a or note_b."
-            )
+    def requires_manual_review(self, artifact: ContentArtifact) -> bool:
+        topic = self.session.get(Topic, artifact.topic_id)
+        if not topic:
+            return bool(artifact.extra_metadata.get("manual_review_required"))
+        return self.content_quality.facts.requires_manual_review(
+            topic,
+            title=artifact.artifact_title or "",
+            content=artifact.content,
+        )
+
+    def defer_for_review(self, artifact: ContentArtifact, reason: str) -> ContentArtifact:
+        artifact.status = "review_pending"
+        artifact.reviewed = False
+        artifact.reviewed_by = None
+        artifact.review_notes = reason
+        artifact.extra_metadata = {
+            **artifact.extra_metadata,
+            "manual_review_required": True,
+        }
+        artifact.updated_at = datetime.now(timezone.utc)
+        self.session.add(artifact)
+        self.session.commit()
+        self.session.refresh(artifact)
+        return artifact
+
+    def _validate_publish_ready(self, artifact: ContentArtifact, *, automated: bool) -> None:
+        if artifact.platform == "note":
+            note_account = str(artifact.extra_metadata.get("note_account") or "").strip()
+            if not note_account:
+                raise InvalidStateError("note artifact requires note_account before publishing.")
+            if note_account not in {"note_a", "note_b"}:
+                raise InvalidStateError(
+                    f"note artifact has unsupported note_account '{note_account}'. Expected note_a or note_b."
+                )
+
+        topic = self.session.get(Topic, artifact.topic_id)
+        if not topic:
+            raise InvalidStateError("Artifact topic is missing; content quality cannot be verified.")
+        if automated and self.requires_manual_review(artifact):
+            raise InvalidStateError("Artifact requires manual editorial review before publishing.")
+
+        comparisons = list(
+            self.session.exec(
+                select(ContentArtifact.content)
+                .where(ContentArtifact.topic_id == artifact.topic_id)
+                .where(ContentArtifact.id != artifact.id)
+                .where(ContentArtifact.platform != artifact.platform)
+            ).all()
+        )
+        target_url = self.content_quality.facts.resolve_target_url(topic)
+        report = self.content_quality.evaluate(
+            title=artifact.artifact_title or "",
+            content=artifact.content,
+            topic=topic,
+            platform=artifact.platform,
+            target_url=target_url,
+            comparison_contents=comparisons,
+        )
+        artifact.extra_metadata = {
+            **artifact.extra_metadata,
+            "resolved_target_url": target_url,
+            "product_facts_version": self.content_quality.facts.version,
+            "manual_review_required": self.requires_manual_review(artifact),
+            "quality_report": report.as_dict(),
+        }
+        if report.publish_blocked:
+            details = " | ".join(report.errors + report.warnings)
+            raise InvalidStateError(f"Artifact failed content quality gate ({report.score}/100): {details}")
 
     def update_performance(
         self,

@@ -9,6 +9,7 @@ from app.engines.prompt_engine import PromptEngine
 from app.models.artifact import ArtifactGenerationPayload, ContentArtifact
 from app.models.distribution_task import DistributionTask
 from app.models.topic import Topic
+from app.services.content_quality_service import ContentQualityService
 
 
 class TaskService:
@@ -16,6 +17,7 @@ class TaskService:
         self.session = session
         self.prompt_engine = PromptEngine()
         self.artifact_engine = ArtifactEngine()
+        self.content_quality = ContentQualityService()
 
     def list_tasks(
         self,
@@ -85,6 +87,32 @@ class TaskService:
             self.session.commit()
             return {"task_id": task.id, "status": task.status, "error": task.error_message}
 
+        comparison_contents = list(
+            self.session.exec(
+                select(ContentArtifact.content)
+                .where(ContentArtifact.topic_id == topic.id)
+                .where(ContentArtifact.platform != task.platform)
+            ).all()
+        )
+        resolved_target_url = self.content_quality.facts.resolve_target_url(topic)
+        quality_report = self.content_quality.evaluate(
+            title=artifact_title,
+            content=content,
+            topic=topic,
+            platform=task.platform,
+            target_url=resolved_target_url,
+            comparison_contents=comparison_contents,
+        )
+        manual_review_required = self.content_quality.facts.requires_manual_review(
+            topic,
+            title=artifact_title,
+            content=content,
+        )
+        initial_status = "review_pending" if manual_review_required or quality_report.publish_blocked else "generated"
+        review_notes = None
+        if quality_report.errors or quality_report.warnings:
+            review_notes = " | ".join(quality_report.errors + quality_report.warnings)
+
         artifact = ContentArtifact(
             id=generate_id("art"),
             topic_id=task.topic_id,
@@ -97,9 +125,10 @@ class TaskService:
             content=content,
             prompt_version=prompt_version,
             generation_model=self.artifact_engine.generation_model,
-            status="publish_pending" if task.platform == "ameba" else "generated",
-            reviewed=task.platform == "ameba",
-            reviewed_by="ameba-auto-generation" if task.platform == "ameba" else None,
+            status=initial_status,
+            reviewed=False,
+            reviewed_by=None,
+            review_notes=review_notes,
             extra_metadata={
                 "objective": task.objective,
                 "target_keyword": topic.target_keyword,
@@ -121,6 +150,11 @@ class TaskService:
                 "note_account": topic.note_account or "",
                 "source_topic_id": topic.id,
                 "target_platforms": topic.target_platforms,
+                "resolved_target_url": resolved_target_url,
+                "product_facts_version": self.content_quality.facts.version,
+                "platform_role": self.content_quality.facts.platform_role(task.platform),
+                "manual_review_required": manual_review_required,
+                "quality_report": quality_report.as_dict(),
             },
         )
 

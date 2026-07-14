@@ -10,28 +10,27 @@ import httpx
 from app.core.config import settings
 from app.models.artifact import ArtifactGenerationPayload
 from app.models.topic import Topic
+from app.services.content_quality_service import UkamiruProductFacts, canonicalize_url
 
 
 class ArtifactEngine:
     def __init__(self) -> None:
         self.generation_model = settings.openai_model
+        self.product_facts = UkamiruProductFacts()
 
     def generate(self, payload: ArtifactGenerationPayload, topic: Topic) -> tuple[str, str, str]:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured for artifact generation.")
 
-        if payload.platform.lower() in {"note", "ameba"}:
-            return self._generate_legacy_article(payload, topic)
-
         system_prompt = str(payload.extra_metadata.get("system_prompt") or "").strip()
-        if payload.platform.lower() == "ameba":
-            return self._generate_ameba(payload, topic, system_prompt=system_prompt)
-
         response = self._chat_completion(
             system_prompt=system_prompt,
             user_prompt=self._build_user_prompt(payload, topic),
+            response_format_json=True,
+            max_tokens=max(settings.llm_max_tokens, 5000),
         )
         result = self._parse_generation_response(response, topic, platform=payload.platform)
+        result = self._postprocess_generated_result(result, payload, topic)
         self._validate_generated_content(result, platform=payload.platform)
         return result
 
@@ -416,11 +415,17 @@ Context:
 
     def _topic_row(self, payload: ArtifactGenerationPayload, topic: Topic) -> dict[str, Any]:
         metadata = payload.extra_metadata
-        target_url = topic.target_url or str(metadata.get("target_url") or "") or self._infer_target_url(topic)
+        configured_target_url = topic.target_url or str(metadata.get("target_url") or "")
+        target_url = self.product_facts.resolve_target_url(topic)
+        if configured_target_url and not self.product_facts._is_ukamiru_home(configured_target_url):
+            target_url = configured_target_url
+        target_url = canonicalize_url(target_url)
         brand_name = topic.brand_name or str(metadata.get("brand_name") or "") or self._infer_brand_name(topic)
         return {
             "topic_id": topic.feishu_topic_id or topic.id,
             "topic": topic.master_topic,
+            "topic_cluster": topic.topic_cluster,
+            "business_goal": topic.business_goal,
             "main_keyword": topic.target_keyword,
             "secondary_keyword": topic.secondary_keyword or str(metadata.get("secondary_keyword") or ""),
             "secondary_keywords": self._to_list(topic.secondary_keywords or metadata.get("secondary_keywords")),
@@ -444,7 +449,7 @@ Context:
 
     @classmethod
     def _infer_target_url(cls, topic: Topic) -> str:
-        return "https://ukamiru.jp/"
+        return "https://www.ukamiru.jp/"
         primary_text = f"{topic.master_topic} {topic.target_keyword} {topic.topic_cluster}"
         text = f"{topic.master_topic} {topic.target_keyword} {topic.topic_cluster} {topic.brief or ''}"
         takken_rules = [
@@ -584,7 +589,7 @@ Context:
         text = self._replace_target_markdown_links(
             text=text,
             target_url=row["target_url"],
-            tracked_target_url=self._build_tracked_target_url(target_url=row["target_url"], platform=platform),
+            tracked_target_url=self._tracked_url_for_row(row, platform=platform),
         )
         text = self._ensure_target_link(text, row, platform=platform)
         text = self._collapse_duplicate_target_links(text, row, platform=platform)
@@ -645,7 +650,7 @@ Context:
         return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
     def _ensure_target_link(self, text: str, row: dict[str, Any], *, platform: str) -> str:
-        target_url = self._build_tracked_target_url(target_url=row.get("target_url", ""), platform=platform)
+        target_url = self._tracked_url_for_row(row, platform=platform)
         if not text or not target_url or self._contains_markdown_link(text, target_url):
             return text
         for anchor_text in self._anchor_candidates(row):
@@ -699,19 +704,104 @@ Context:
         return f"{text}\n\n{sentence}".strip()
 
     @staticmethod
-    def _build_tracked_target_url(*, target_url: str, platform: str) -> str:
+    def _build_tracked_target_url(
+        *,
+        target_url: str,
+        platform: str,
+        campaign: str = "",
+        content_id: str = "",
+    ) -> str:
         target_url = str(target_url or "").strip()
         platform_key = str(platform or "").strip().lower()
-        if not target_url or platform_key not in {"note", "ameba"}:
+        tracked_platforms = {"note", "ameba", "hatena", "zenn", "x", "bluesky"}
+        if not target_url or platform_key not in tracked_platforms:
             return target_url
         parsed = urlsplit(target_url)
+        tracked_keys = {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
         query_items = [
             (key, value)
             for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-            if key != "utm_source"
+            if key not in tracked_keys
         ]
-        query_items.append(("utm_source", "note" if platform_key == "note" else "ameba"))
+        query_items.append(("utm_source", platform_key))
+        query_items.append(("utm_medium", "referral"))
+        if campaign:
+            query_items.append(("utm_campaign", campaign))
+        if content_id:
+            query_items.append(("utm_content", content_id))
         return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
+
+    def _tracked_url_for_row(self, row: dict[str, Any], *, platform: str) -> str:
+        return self._build_tracked_target_url(
+            target_url=str(row.get("target_url") or ""),
+            platform=platform,
+            campaign=str(row.get("business_goal") or row.get("topic_cluster") or ""),
+            content_id=str(row.get("topic_id") or ""),
+        )
+
+    def _postprocess_generated_result(
+        self,
+        result: tuple[str, str, str],
+        payload: ArtifactGenerationPayload,
+        topic: Topic,
+    ) -> tuple[str, str, str]:
+        title, summary, content = result
+        platform = payload.platform.lower()
+        long_form_platforms = {"ameba", "hatena", "livedoor", "note", "zenn"}
+        if platform not in long_form_platforms | {"x", "bluesky"}:
+            return result
+
+        row = self._topic_row(payload, topic)
+        target_url = self._tracked_url_for_row(row, platform=platform)
+        if not target_url:
+            return result
+
+        if platform in long_form_platforms:
+            content = self._replace_target_markdown_links(
+                text=content,
+                target_url=row["target_url"],
+                tracked_target_url=target_url,
+            )
+            content = self._ensure_target_link(content, row, platform=platform)
+            content = self._collapse_duplicate_target_links(content, row, platform=platform)
+        else:
+            max_length = 260 if platform == "x" else 300
+            content = self._ensure_social_target_url(
+                text=content,
+                target_url=row["target_url"],
+                tracked_target_url=target_url,
+                max_length=max_length,
+            )
+        return title, summary, content
+
+    def _ensure_social_target_url(
+        self,
+        *,
+        text: str,
+        target_url: str,
+        tracked_target_url: str,
+        max_length: int,
+    ) -> str:
+        cleaned = str(text or "").strip()
+        markdown_pattern = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+
+        def replace_markdown(match: re.Match[str]) -> str:
+            if self._is_same_target_link(url=match.group(2), target_url=target_url):
+                return match.group(1)
+            return match.group(0)
+
+        cleaned = markdown_pattern.sub(replace_markdown, cleaned)
+        for url in re.findall(r"https?://[^\s]+", cleaned):
+            candidate = url.rstrip(".,!?;:)]}\u3002\uff0c\uff01\uff1f\uff1b\uff1a\uff09\u300d\u300f")
+            if self._is_same_target_link(url=candidate, target_url=target_url):
+                cleaned = cleaned.replace(candidate, "")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+        available = max_length - len(tracked_target_url) - 1
+        if len(cleaned) > available:
+            cleaned = cleaned[: max(available - 1, 0)].rstrip(" \n\t.,!?;:\u3002\uff0c\uff01\uff1f\uff1b\uff1a") + "\u2026"
+        return f"{cleaned}\n{tracked_target_url}".strip()
 
     def _replace_target_markdown_links(self, *, text: str, target_url: str, tracked_target_url: str) -> str:
         if not text or not target_url or not tracked_target_url:
@@ -730,21 +820,30 @@ Context:
     def _is_same_target_link(*, url: str, target_url: str) -> bool:
         url_parts = urlsplit(str(url or "").strip())
         target_parts = urlsplit(str(target_url or "").strip())
-        if (url_parts.scheme, url_parts.netloc, url_parts.path, url_parts.fragment) != (
+        url_host = url_parts.netloc.lower().removeprefix("www.")
+        target_host = target_parts.netloc.lower().removeprefix("www.")
+        if (url_parts.scheme, url_host, url_parts.path, url_parts.fragment) != (
             target_parts.scheme,
-            target_parts.netloc,
+            target_host,
             target_parts.path,
             target_parts.fragment,
         ):
             return False
-        url_query = [(key, value) for key, value in parse_qsl(url_parts.query, keep_blank_values=True) if key != "utm_source"]
+        tracking_keys = {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
+        url_query = [
+            (key, value)
+            for key, value in parse_qsl(url_parts.query, keep_blank_values=True)
+            if key not in tracking_keys
+        ]
         target_query = [
-            (key, value) for key, value in parse_qsl(target_parts.query, keep_blank_values=True) if key != "utm_source"
+            (key, value)
+            for key, value in parse_qsl(target_parts.query, keep_blank_values=True)
+            if key not in tracking_keys
         ]
         return url_query == target_query
 
     def _collapse_duplicate_target_links(self, text: str, row: dict[str, Any], *, platform: str) -> str:
-        target_url = self._build_tracked_target_url(target_url=row.get("target_url", ""), platform=platform)
+        target_url = self._tracked_url_for_row(row, platform=platform)
         if not text or not target_url:
             return text
         pattern = re.compile(rf"\[([^\]]+)\]\({re.escape(target_url)}\)")
@@ -782,6 +881,9 @@ Context:
 
     def _build_user_prompt(self, payload: ArtifactGenerationPayload, topic: Topic) -> str:
         platform = payload.platform.lower()
+        row = self._topic_row(payload, topic)
+        tracked_target_url = self._tracked_url_for_row(row, platform=platform)
+        product_context = self.product_facts.prompt_context(platform)
         if platform == "x":
             return "\n".join(
                 [
@@ -793,7 +895,8 @@ Context:
                     "- content: final X post text, 80-240 Japanese characters",
                     "",
                     "Do not wrap the JSON in markdown code fences.",
-                    "Do not include URLs, markdown links, hashtags, emojis, source notes, or meta commentary.",
+                    "Do not include markdown links, hashtags, emojis, source notes, or meta commentary.",
+                    "A tracked target URL will be appended automatically; make the CTA lead naturally into it.",
                     "",
                     "Topic context:",
                     f"- master_topic: {topic.master_topic}",
@@ -801,6 +904,7 @@ Context:
                     f"- business_goal: {topic.business_goal}",
                     f"- target_keyword: {topic.target_keyword}",
                     f"- brief: {topic.brief or ''}",
+                    f"- target_url: {tracked_target_url}",
                     "",
                     "Writing requirements:",
                     "- Write in Japanese.",
@@ -808,6 +912,7 @@ Context:
                     "- Make it useful as a standalone social post.",
                     "- Keep it under 260 characters after URL removal.",
                     "- Avoid generic AI disclaimers and salesy claims.",
+                    "- Include one concise CTA to visit Ukamiru.",
                 ]
             )
         if platform == "bluesky":
@@ -822,6 +927,7 @@ Context:
                     "",
                     "Do not wrap the JSON in markdown code fences.",
                     "Do not include markdown links, source notes, or meta commentary.",
+                    "A tracked target URL will be appended automatically; make the CTA lead naturally into it.",
                     "",
                     "Topic context:",
                     f"- master_topic: {topic.master_topic}",
@@ -829,6 +935,7 @@ Context:
                     f"- business_goal: {topic.business_goal}",
                     f"- target_keyword: {topic.target_keyword}",
                     f"- brief: {topic.brief or ''}",
+                    f"- target_url: {tracked_target_url}",
                     "",
                     "Writing requirements:",
                     "- Write in Japanese.",
@@ -836,6 +943,7 @@ Context:
                     "- Include one observation or question that invites replies.",
                     "- Keep it under 300 characters.",
                     "- Avoid generic AI disclaimers and salesy claims.",
+                    "- Include a calm, concise CTA to visit Ukamiru.",
                 ]
             )
         return "\n".join(
@@ -857,6 +965,12 @@ Context:
                 f"- target_keyword: {topic.target_keyword}",
                 f"- priority: {topic.priority}",
                 f"- brief: {topic.brief or ''}",
+                f"- target_url: {tracked_target_url}",
+                f"- target_audience: {row['target_audience']}",
+                f"- article_type: {row['article_type']}",
+                f"- content_focus: {row['content_focus']}",
+                f"- scenes: {' / '.join(row['scenes'])}",
+                f"- extra_rules: {row['extra_rules']}",
                 "",
                 "Distribution task:",
                 f"- platform: {payload.platform}",
@@ -864,15 +978,22 @@ Context:
                 f"- objective: {payload.objective}",
                 f"- angle: {payload.angle}",
                 "",
+                "Product and platform constraints:",
+                product_context,
+                "",
                 "Writing requirements:",
                 "- Write in Japanese unless the topic clearly calls for another language.",
                 "- Avoid generic AI disclaimers.",
-                "- Mention the target keyword naturally.",
+                "- Treat target_keyword as a search query, not copy. Never reproduce a space-separated Japanese query verbatim; rewrite it as natural Japanese.",
                 "- Keep product or brand references useful, not salesy.",
-                "- Use exactly one short opening paragraph followed by 3-5 '##' sections.",
+                "- Follow the supplied platform role and angle. Do not reuse the same comprehensive angle on every platform.",
+                "- Use one short opening paragraph followed by 3-6 '##' sections.",
                 "- Each section must contain concrete steps, examples, or decision criteria.",
+                "- If the title promises 手順, 始め方, or 使い方, include at least three numbered steps and explain the actual user action and result.",
+                "- Use only the verified product capability claims above. If the facts do not support a feature, omit it.",
                 "- Do not use broken mojibake text, mixed encoding artifacts, or unreadable symbols.",
                 "- Do not include front matter.",
+                "- Include 1-3 natural Markdown links only when they help the reader; include target_url at least once.",
             ]
         )
 
@@ -924,12 +1045,7 @@ Context:
             if content:
                 return title, summary, content
         if self._looks_like_json_response(response_text):
-            if platform.lower() == "ameba":
-                return self._parse_markdown_fallback(response_text, topic)
             raise RuntimeError("LLM returned malformed JSON for artifact generation.")
-
-        if platform.lower() == "ameba":
-            return self._parse_markdown_fallback(response_text, topic)
 
         title = topic.master_topic
         lines = [line.strip() for line in response_text.splitlines() if line.strip()]
@@ -1048,12 +1164,13 @@ Context:
         if any(token in content_text for token in forbidden_tokens):
             raise RuntimeError("Generated content contains formatting or encoding artifacts.")
         heading_count = len(re.findall(r"(?m)^##\s+\S", content_text))
-        if platform_key in {"note", "ameba"} and heading_count < 2:
+        long_form_platforms = {"ameba", "hatena", "livedoor", "note", "zenn"}
+        if platform_key in long_form_platforms and heading_count < 2:
             raise RuntimeError("Generated article must include at least two markdown H2 sections.")
         oversized_headings = [
             match.group(2).strip()
             for match in re.finditer(r"(?m)^(#{2,6})\s+(.+)$", content_text)
             if self._is_oversized_markdown_heading(match.group(2))
         ]
-        if platform_key in {"note", "ameba"} and oversized_headings:
+        if platform_key in long_form_platforms and oversized_headings:
             raise RuntimeError("Generated article contains body-like oversized markdown headings.")

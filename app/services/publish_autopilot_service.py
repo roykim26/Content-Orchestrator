@@ -529,6 +529,13 @@ class PublishAutopilotService:
             artifact = self.artifact_service.get_artifact(artifact_id)
             if not artifact:
                 continue
+            if artifact.status == "review_pending" or self.artifact_service.requires_manual_review(artifact):
+                if artifact.status != "review_pending":
+                    self.artifact_service.defer_for_review(
+                        artifact,
+                        "Manual review required by product/editorial policy.",
+                    )
+                continue
             if artifact.status != "publish_pending":
                 artifact = self.artifact_service.approve_artifact(artifact.id)
             if artifact and artifact.status == "publish_pending":
@@ -619,6 +626,12 @@ class PublishAutopilotService:
             if lane.account:
                 if not self._artifact_matches_lane_account(artifact, lane):
                     continue
+            if self.artifact_service.requires_manual_review(artifact):
+                self.artifact_service.defer_for_review(
+                    artifact,
+                    "Manual review required by product/editorial policy.",
+                )
+                continue
             return artifact
         return None
 

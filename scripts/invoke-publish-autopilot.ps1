@@ -9,6 +9,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Windows treats environment variable names case-insensitively, but Start-Process
+# can fail when both Path and PATH are present in the inherited environment.
+$processPath = [Environment]::GetEnvironmentVariable("Path", "Process")
+if (-not $processPath) {
+    $processPath = [Environment]::GetEnvironmentVariable("PATH", "Process")
+}
+[Environment]::SetEnvironmentVariable("PATH", $null, "Process")
+if ($processPath) {
+    [Environment]::SetEnvironmentVariable("Path", $processPath, "Process")
+}
+
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $logDir = Join-Path $root "logs"
 if (-not (Test-Path $logDir)) {
@@ -54,7 +65,7 @@ function Get-ConfiguredAutopilotLanes {
         }
     }
 
-    return @("note_a", "note_b", "ameba", "x_ta", "bluesky_ta")
+    return @("note_a", "note_b", "ameba", "x_ta", "bluesky_ta", "zenn", "hatena_a", "hatena_b")
 }
 
 function Ensure-Orchestrator {
@@ -178,6 +189,7 @@ Write-Log "Starting publish autopilot for lanes: $($lanes -join ', ')."
 Ensure-Orchestrator
 
 $apiLanes = @()
+$unavailableLanes = @()
 foreach ($laneName in $lanes) {
     if (!$DryRun.IsPresent -and ($laneName -eq "note_a" -or $laneName -eq "note_b")) {
         Write-Log "Running note lane directly with repaired trigger for $laneName."
@@ -185,11 +197,20 @@ foreach ($laneName in $lanes) {
         continue
     }
 
-    Ensure-PublisherLane -LaneName $laneName
-    $apiLanes += $laneName
+    try {
+        Ensure-PublisherLane -LaneName $laneName
+        $apiLanes += $laneName
+    } catch {
+        $unavailableLanes += $laneName
+        Write-Log "Skipping unavailable lane $laneName; other healthy lanes will continue. Error: $($_.Exception.Message)"
+    }
 }
 
 if ($apiLanes.Count -eq 0) {
+    if ($unavailableLanes.Count -gt 0) {
+        Write-Log "No API lanes are available. Unavailable lanes: $($unavailableLanes -join ', ')."
+        exit 1
+    }
     Write-Log "All requested lanes completed via direct publisher triggers."
     exit 0
 }
@@ -210,7 +231,10 @@ $resultJson = $result | ConvertTo-Json -Depth 20
 Write-Log "Autopilot result: $resultJson"
 
 $failed = @($result.results | Where-Object { $_.status -eq "failed" })
-if ($failed.Count -gt 0) {
+if ($failed.Count -gt 0 -or $unavailableLanes.Count -gt 0) {
+    if ($unavailableLanes.Count -gt 0) {
+        Write-Log "Autopilot completed for healthy lanes, but these lanes were unavailable: $($unavailableLanes -join ', ')."
+    }
     exit 1
 }
 

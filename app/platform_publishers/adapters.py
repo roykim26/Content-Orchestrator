@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
@@ -49,6 +50,16 @@ def _account_env(base_name: str, account: str | None, default: str = "") -> str:
         if value:
             return value
     return default
+
+
+def _normalize_hatena_blog_id(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    if parsed.scheme and parsed.netloc:
+        return parsed.netloc.rstrip("/")
+    return text.rstrip("/")
 
 
 def _split_tags(value: Any, *, limit: int = 10) -> list[str]:
@@ -221,7 +232,7 @@ class HatenaPublisher:
 
     def _config(self, account: str | None) -> dict[str, Any]:
         hatena_id = _account_env("HATENA_ID", account)
-        blog_id = _account_env("HATENA_BLOG_ID", account)
+        blog_id = _normalize_hatena_blog_id(_account_env("HATENA_BLOG_ID", account))
         api_key = _account_env("HATENA_API_KEY", account)
         missing = [name for name, value in [("HATENA_ID", hatena_id), ("HATENA_BLOG_ID", blog_id), ("HATENA_API_KEY", api_key)] if not value]
         if missing:

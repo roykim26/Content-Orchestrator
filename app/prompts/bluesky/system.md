@@ -9,4 +9,5 @@ Requirements:
 - Ask a concrete question about qualification exam study, problem practice, weak-point review, or learning habits.
 - Keep the tone calm, curious, and useful.
 - Mention Ukamiru naturally only when it helps the topic.
+- Include a calm CTA that leads naturally into the Ukamiru target URL appended automatically.
 - Avoid hype, guaranteed-result claims, unsupported numbers, and hashtag stuffing.

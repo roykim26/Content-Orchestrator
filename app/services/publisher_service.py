@@ -5,9 +5,11 @@ from sqlalchemy import String, cast, or_
 from sqlmodel import Session, select
 
 from app.core.exceptions import InvalidStateError
-from app.models.artifact import ArtifactClaimRequest, ArtifactPublishResult, ContentArtifact
+from app.engines.artifact_engine import ArtifactEngine
+from app.models.artifact import ArtifactClaimRequest, ArtifactGenerationPayload, ArtifactPublishResult, ContentArtifact
 from app.models.topic import Topic
 from app.services.feishu_topic_sync_service import FeishuTopicSyncService
+from app.services.artifact_service import ArtifactService
 
 
 NOTE_PUBLIC_SLUGS_BY_ACCOUNT = {
@@ -77,7 +79,35 @@ class PublisherService:
             return artifacts
 
         now = datetime.now(timezone.utc)
+        claimable: list[ContentArtifact] = []
+        artifact_service = ArtifactService(self.session)
         for artifact in artifacts:
+            if not artifact.reviewed:
+                artifact.status = "review_pending"
+                artifact.review_notes = "Artifact reached publish_pending without an editorial review."
+                self.session.add(artifact)
+                continue
+            if artifact_service.requires_manual_review(artifact) and artifact.reviewed_by in {
+                None,
+                "ameba-auto-generation",
+                "publish-autopilot-quality-gate",
+            }:
+                artifact.status = "review_pending"
+                artifact.reviewed = False
+                artifact.reviewed_by = None
+                artifact.review_notes = "Manual editorial review is required by product/content policy."
+                self.session.add(artifact)
+                continue
+            self._ensure_target_link_before_publish(artifact)
+            try:
+                artifact_service._validate_publish_ready(artifact, automated=False)
+            except InvalidStateError as exc:
+                artifact.status = "review_pending"
+                artifact.reviewed = False
+                artifact.reviewed_by = None
+                artifact.review_notes = str(exc)
+                self.session.add(artifact)
+                continue
             artifact.status = "publishing"
             artifact.claimed_by = payload.consumer_name
             artifact.extra_metadata = self._metadata_with_claim_account(artifact, payload)
@@ -85,10 +115,36 @@ class PublisherService:
             artifact.publish_attempts += 1
             artifact.updated_at = now
             self.session.add(artifact)
+            claimable.append(artifact)
         self.session.commit()
-        for artifact in artifacts:
+        for artifact in claimable:
             self.session.refresh(artifact)
-        return artifacts
+        return claimable
+
+    def _ensure_target_link_before_publish(self, artifact: ContentArtifact) -> None:
+        if artifact.platform not in {"ameba", "hatena", "livedoor", "note", "zenn", "x", "bluesky"}:
+            return
+        topic = self.session.get(Topic, artifact.topic_id)
+        if not topic:
+            return
+        payload = ArtifactGenerationPayload(
+            task_id=artifact.task_id,
+            platform=artifact.platform,
+            content_type=artifact.content_type,
+            objective=str(artifact.extra_metadata.get("objective") or topic.business_goal),
+            angle=artifact.angle,
+            extra_metadata=dict(artifact.extra_metadata),
+        )
+        _, _, content = ArtifactEngine()._postprocess_generated_result(
+            (
+                artifact.artifact_title or topic.master_topic,
+                artifact.artifact_summary or "",
+                artifact.content,
+            ),
+            payload,
+            topic,
+        )
+        artifact.content = content
 
     @staticmethod
     def _claim_account(payload: ArtifactClaimRequest) -> str | None:

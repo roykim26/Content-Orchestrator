@@ -10,7 +10,7 @@ pytest-cache-files-*/
 venv/
 .env
 data/
-hatena_exports/
+hatena_exports*/
 logs/
 *.log
 *.db

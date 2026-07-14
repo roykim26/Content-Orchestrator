@@ -1,0 +1,74 @@
+{
+  "version": "2026-07-14",
+  "brand": "Ukamiru",
+  "canonical_home": "https://www.ukamiru.jp/",
+  "verified_capabilities": [
+    "正解だけでなく、すべての選択肢の理由を解説する",
+    "問題を根底の概念に結びつけて説明する",
+    "ビジュアルフラッシュカードと間隔反復（SRS）を利用できる",
+    "本番形式の模擬試験を利用できる",
+    "間違えた問題を分野別の弱点バンクで復習できる",
+    "赤から緑で仕上がりを確認できるトピックマップがある",
+    "Webとモバイルで学習進捗・弱点・プランを同期できる",
+    "各試験に毎日の無料枠があり、開始時にクレジットカードは不要"
+  ],
+  "forbidden_claim_patterns": [
+    "関連するテキストページへスムーズに遷移",
+    "週間ごとの正答率推移",
+    "学習時間がグラフ",
+    "週ごとの正答率",
+    "合格を保証",
+    "必ず合格",
+    "公式認定"
+  ],
+  "exam_routes": {
+    "ITパスポート": "https://itpass.ukamiru.jp/",
+    "基本情報技術者": "https://fe.ukamiru.jp/",
+    "情報セキュリティマネジメント": "https://sg.ukamiru.jp/",
+    "危険物乙4": "https://otsu4.ukamiru.jp/",
+    "危険物取扱者 乙4": "https://otsu4.ukamiru.jp/",
+    "第二種電気工事士": "https://denki2.ukamiru.jp/",
+    "衛生管理者": "https://eisei.ukamiru.jp/",
+    "登録販売者": "https://tohan.ukamiru.jp/",
+    "介護福祉士": "https://kaigo.ukamiru.jp/",
+    "保育士": "https://hoiku.ukamiru.jp/",
+    "ケアマネ": "https://caremane.ukamiru.jp/",
+    "ケアマネジャー": "https://caremane.ukamiru.jp/",
+    "行政書士": "https://gyosei.ukamiru.jp/",
+    "日商簿記3級": "https://boki.ukamiru.jp/",
+    "簿記3級": "https://boki.ukamiru.jp/",
+    "日商簿記2級": "https://boki2.ukamiru.jp/",
+    "簿記2級": "https://boki2.ukamiru.jp/",
+    "FP3級": "https://fp.ukamiru.jp/",
+    "証券外務員": "https://gaimuin.ukamiru.jp/",
+    "宅建": "https://www.takkenai.jp/takken/",
+    "宅地建物取引士": "https://www.takkenai.jp/takken/"
+  },
+  "platform_roles": {
+    "ameba": "実際の学習場面、使用体験、学習日記、単一の具体的な利用シーンを中心にする。包括的SEO攻略記事にはしない。",
+    "hatena": "明確な長尾検索意図に答える具体的な手順、比較、試験別攻略を中心にする。",
+    "note": "ブランドの考え方、プロダクトストーリー、深い利用事例や学習設計を中心にする。",
+    "zenn": "実装、データモデル、学習UX、運用上の設計判断とトレードオフを中心にする。",
+    "livedoor": "製品更新、試験情報、短い実用チュートリアルを中心にする。",
+    "x": "単一の実用的な気づきと次の行動を短く伝える。",
+    "bluesky": "学習上の観察や問いを提示し、会話を促す。"
+  },
+  "manual_review_topic_clusters": [
+    "exam_module_launch",
+    "ukamiru_brand_awareness"
+  ],
+  "manual_review_terms": [
+    "新機能",
+    "新モジュール",
+    "使い方",
+    "始める手順",
+    "始める5ステップ",
+    "利用ガイド",
+    "問題演習を始める",
+    "操作手順",
+    "法改正",
+    "試験日程",
+    "合格率",
+    "統計"
+  ]
+}

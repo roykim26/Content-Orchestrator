@@ -9,4 +9,4 @@ class PromptEngine:
         prompt_file = self.prompt_root / platform / "system.md"
         if not prompt_file.exists():
             return "v0", f"Default prompt for {platform}"
-        return "v1", prompt_file.read_text(encoding="utf-8").strip()
+        return "v2-seo-quality", prompt_file.read_text(encoding="utf-8").strip()
