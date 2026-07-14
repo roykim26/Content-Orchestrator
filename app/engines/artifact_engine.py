@@ -764,15 +764,61 @@ Context:
             )
             content = self._ensure_target_link(content, row, platform=platform)
             content = self._collapse_duplicate_target_links(content, row, platform=platform)
+        elif platform == "x":
+            content = self._prepare_x_social_text(content)
         else:
-            max_length = 260 if platform == "x" else 300
             content = self._ensure_social_target_url(
                 text=content,
                 target_url=row["target_url"],
                 tracked_target_url=target_url,
-                max_length=max_length,
+                max_length=300,
             )
         return title, summary, content
+
+    def _prepare_x_social_text(self, text: str) -> str:
+        cleaned = str(text or "").strip()
+        cleaned = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", cleaned)
+        cleaned = re.sub(r"https?://[^\s]+", "", cleaned)
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+        return self._truncate_x_weighted(cleaned, max_weight=280)
+
+    @classmethod
+    def _truncate_x_weighted(cls, text: str, *, max_weight: int) -> str:
+        if cls._x_weighted_length(text) <= max_weight:
+            return text
+        ellipsis = "..."
+        ellipsis_weight = cls._x_weighted_length(ellipsis)
+        budget = max(max_weight - ellipsis_weight, 0)
+        kept: list[str] = []
+        used = 0
+        for char in text:
+            char_weight = cls._x_char_weight(char)
+            if used + char_weight > budget:
+                break
+            kept.append(char)
+            used += char_weight
+        return "".join(kept).rstrip(" \n\t.,!?;:\u3002\uff0c\uff01\uff1f\uff1b\uff1a") + ellipsis
+
+    @classmethod
+    def _x_weighted_length(cls, text: str) -> int:
+        return sum(cls._x_char_weight(char) for char in str(text or ""))
+
+    @staticmethod
+    def _x_char_weight(char: str) -> int:
+        codepoint = ord(char)
+        if codepoint == 0:
+            return 0
+        if codepoint <= 0x10FF:
+            return 1
+        if 0x2000 <= codepoint <= 0x200D:
+            return 1
+        if 0x2010 <= codepoint <= 0x201F:
+            return 1
+        if 0x2032 <= codepoint <= 0x2037:
+            return 1
+        return 2
 
     def _ensure_social_target_url(
         self,
@@ -892,11 +938,11 @@ Context:
                     "Return JSON only with these keys:",
                     "- title: short internal label",
                     "- summary: short editorial summary",
-                    "- content: final X post text, 80-240 Japanese characters",
+                    "- content: final X post text, 60-130 Japanese characters",
                     "",
                     "Do not wrap the JSON in markdown code fences.",
-                    "Do not include markdown links, hashtags, emojis, source notes, or meta commentary.",
-                    "A tracked target URL will be appended automatically; make the CTA lead naturally into it.",
+                    "Do not include URLs, markdown links, hashtags, emojis, source notes, or meta commentary.",
+                    "No link will be appended to X posts.",
                     "",
                     "Topic context:",
                     f"- master_topic: {topic.master_topic}",
@@ -910,9 +956,9 @@ Context:
                     "- Write in Japanese.",
                     "- Use one clear hook and one practical insight.",
                     "- Make it useful as a standalone social post.",
-                    "- Keep it under 260 characters after URL removal.",
+                    "- Keep it under X's 280 weighted-character limit; Japanese CJK characters count as 2.",
                     "- Avoid generic AI disclaimers and salesy claims.",
-                    "- Include one concise CTA to visit Ukamiru.",
+                    "- Mention Ukamiru naturally without a URL.",
                 ]
             )
         if platform == "bluesky":
@@ -1139,7 +1185,7 @@ Context:
         if platform_key == "x":
             if len(content_text) < 20:
                 raise RuntimeError("Generated X content is too short.")
-            if len(content_text) > 260:
+            if self._x_weighted_length(content_text) > 280:
                 raise RuntimeError("Generated X content is too long.")
         elif platform_key == "bluesky":
             if len(content_text) < 20:

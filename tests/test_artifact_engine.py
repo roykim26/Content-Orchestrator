@@ -54,10 +54,23 @@ class ArtifactEngineTargetLinkTests(unittest.TestCase):
                 self.assertEqual(content.count(expected), 1)
                 self.assertIn(f"]({expected})", content)
 
-    def test_x_and_bluesky_receive_one_tracked_raw_url(self) -> None:
+    def test_x_removes_links_and_respects_weighted_limit(self) -> None:
+        long_japanese = "\u65e5" * 180
+        result = ("short title", "summary ok", f"{long_japanese} https://ukamiru.jp/?utm_source=old")
+
+        _, _, content = self.engine._postprocess_generated_result(
+            result,
+            self._payload("x"),
+            self.topic,
+        )
+
+        self.assertNotIn("http", content)
+        self.assertLessEqual(self.engine._x_weighted_length(content), 280)
+
+    def test_bluesky_receives_one_tracked_raw_url(self) -> None:
         result = ("十分な長さのテストタイトル", "編集用サマリー", "今日の問題演習を振り返り、弱点を一つだけ整理してみましょう。")
 
-        for platform, max_length in (("x", 260), ("bluesky", 300)):
+        for platform, max_length in (("bluesky", 300),):
             with self.subTest(platform=platform):
                 _, _, content = self.engine._postprocess_generated_result(
                     result,
@@ -79,10 +92,10 @@ class ArtifactEngineTargetLinkTests(unittest.TestCase):
             "詳しくはこちら https://ukamiru.jp/?utm_source=old",
         )
 
-        _, _, content = self.engine._postprocess_generated_result(result, self._payload("x"), self.topic)
+        _, _, content = self.engine._postprocess_generated_result(result, self._payload("bluesky"), self.topic)
 
         self.assertNotIn("utm_source=old", content)
-        self.assertEqual(content.count("https://www.ukamiru.jp/?utm_source=x"), 1)
+        self.assertEqual(content.count("https://www.ukamiru.jp/?utm_source=bluesky"), 1)
 
     def test_tracking_preserves_existing_query_parameters(self) -> None:
         tracked = self.engine._build_tracked_target_url(
