@@ -17,7 +17,7 @@ function Test-OrchestratorHealth {
 
 if (Test-OrchestratorHealth) {
     Write-Output "Content Orchestrator is already healthy on 8020."
-    exit 0
+    return
 }
 
 if (!(Test-Path $logsDir)) {
@@ -63,7 +63,7 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 1
     if (Test-OrchestratorHealth) {
         Write-Output "Content Orchestrator started and is healthy on 8020."
-        exit 0
+        return
     }
 }
 

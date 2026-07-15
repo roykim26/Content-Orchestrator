@@ -87,15 +87,14 @@ class PublisherService:
                 artifact.review_notes = "Artifact reached publish_pending without an editorial review."
                 self.session.add(artifact)
                 continue
-            if artifact_service.requires_manual_review(artifact) and artifact.reviewed_by in {
-                None,
-                "ameba-auto-generation",
-                "publish-autopilot-quality-gate",
-            }:
+            if (
+                artifact_service.requires_manual_review(artifact)
+                and not artifact_service.has_trusted_fact_review(artifact)
+            ):
                 artifact.status = "review_pending"
                 artifact.reviewed = False
                 artifact.reviewed_by = None
-                artifact.review_notes = "Manual editorial review is required by product/content policy."
+                artifact.review_notes = "Trusted fact review is required by product/content policy."
                 self.session.add(artifact)
                 continue
             self._ensure_target_link_before_publish(artifact)
@@ -252,6 +251,18 @@ class PublisherService:
         artifact: ContentArtifact,
         payload: ArtifactPublishResult,
     ) -> ArtifactPublishResult:
+        if artifact.platform == "bluesky" and payload.published:
+            published_url = (payload.published_url or "").strip()
+            public_url = self._canonical_public_bluesky_url(published_url)
+            if public_url:
+                return ArtifactPublishResult(
+                    published=True,
+                    published_url=public_url,
+                    external_publish_id=payload.external_publish_id,
+                    status=payload.status,
+                    error_message=payload.error_message,
+                )
+
         if artifact.platform != "note" or not payload.published:
             return payload
 
@@ -285,6 +296,16 @@ class PublisherService:
     @staticmethod
     def _is_note_editor_url(url: str) -> bool:
         return "editor.note.com" in url or "/publish/" in url or "/edit/" in url
+
+    @staticmethod
+    def _canonical_public_bluesky_url(url: str) -> str | None:
+        match = re.fullmatch(
+            r"at://([^/]+)/app\.bsky\.feed\.post/([^/?#]+)",
+            url,
+        )
+        if not match:
+            return None
+        return f"https://bsky.app/profile/{match.group(1)}/post/{match.group(2)}"
 
     @staticmethod
     def _canonical_public_note_url(artifact: ContentArtifact, url: str) -> str | None:
@@ -368,8 +389,6 @@ class PublisherService:
         artifact: ContentArtifact,
         payload: ArtifactPublishResult,
     ) -> None:
-        if artifact.platform not in {"note", "ameba"}:
-            return
         if not (payload.published or (payload.status or "").strip().lower() in {"draft_created", "published_unverified"}):
             return
 

@@ -9,6 +9,7 @@ from app.models.artifact import (
     ArtifactReviewRequest,
 )
 from app.services.artifact_service import ArtifactService
+from app.services.artifact_fact_review_service import ArtifactFactReviewService
 
 router = APIRouter()
 
@@ -42,6 +43,17 @@ def review_artifact(
 ) -> ArtifactApiRead:
     service = ArtifactService(session)
     artifact = service.review_artifact(artifact_id, payload)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return ArtifactApiRead.from_model(artifact)
+
+
+@router.post("/{artifact_id}/fact-review", response_model=ArtifactApiRead)
+def fact_review_artifact(
+    artifact_id: str,
+    session: Session = Depends(get_session),
+) -> ArtifactApiRead:
+    artifact = ArtifactFactReviewService(session).review_artifact(artifact_id)
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
     return ArtifactApiRead.from_model(artifact)

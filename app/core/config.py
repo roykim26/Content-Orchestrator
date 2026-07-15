@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     llm_temperature: float = 1.0
     llm_max_tokens: int = 4000
+    fact_review_enabled: bool = True
+    fact_review_model: str = ""
+    fact_review_reviewer_id: str = "fact-review-bot-v1"
+    fact_review_min_score: int = 90
+    fact_review_max_rewrites: int = 2
+    fact_review_all_long_form: bool = True
+    trusted_fact_reviewer_ids: str = "fact-review-bot-v1"
 
     model_config = SettingsConfigDict(
         env_file=".env",

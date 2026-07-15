@@ -68,6 +68,26 @@ class UkamiruProductFacts:
     def forbidden_claim_patterns(self) -> list[str]:
         return [str(item) for item in self.data.get("forbidden_claim_patterns", [])]
 
+    def editorial_fact_rules(self) -> list[dict[str, str]]:
+        rules: list[dict[str, str]] = []
+        for item in self.data.get("editorial_fact_rules", []):
+            if not isinstance(item, dict):
+                continue
+            pattern = str(item.get("pattern") or "").strip()
+            if not pattern:
+                continue
+            rules.append(
+                {
+                    "id": str(item.get("id") or pattern),
+                    "pattern": pattern,
+                    "message": str(item.get("message") or "内容包含需要更新的专业事实表述。"),
+                }
+            )
+        return rules
+
+    def verified_editorial_facts(self) -> list[str]:
+        return [str(item) for item in self.data.get("verified_editorial_facts", [])]
+
     def resolve_target_url(self, topic: Topic) -> str:
         topic_text = " ".join(
             filter(
@@ -109,13 +129,18 @@ class UkamiruProductFacts:
     def prompt_context(self, platform: str) -> str:
         capabilities = "\n".join(f"- {item}" for item in self.verified_capabilities())
         forbidden = "\n".join(f"- {item}" for item in self.forbidden_claim_patterns())
+        editorial_facts = "\n".join(f"- {item}" for item in self.verified_editorial_facts())
         return (
             f"Product facts version: {self.version}\n"
             f"Platform role: {self.platform_role(platform)}\n"
             "Only the following Ukamiru capability claims are verified:\n"
             f"{capabilities}\n"
             "Never state or imply these unverified/forbidden claims:\n"
-            f"{forbidden}"
+            f"{forbidden}\n"
+            "Current editorial facts that must be followed when relevant:\n"
+            f"{editorial_facts}\n"
+            "For laws, regulations, official schedules, pass rates, and exam rules, do not rely on memory. "
+            "Use current terminology, avoid unsupported details, and leave the artifact for human review."
         )
 
     @staticmethod
@@ -147,6 +172,7 @@ class ContentQualityService:
         self._check_keyword_naturalness(report, title, content, topic)
         self._check_title_promise(report, title, content)
         self._check_forbidden_claims(report, title, content)
+        self._check_editorial_facts(report, title, content)
         self._check_links(report, content, platform_key, report.checks["resolved_target_url"])
         self._check_information_gain(report, content, platform_key)
         self._check_cross_platform_similarity(report, content, comparison_contents)
@@ -191,6 +217,29 @@ class ContentQualityService:
         if matches:
             report.add_error(
                 f"出现未经产品事实库确认的功能或承诺：{' / '.join(matches)}",
+                40,
+            )
+
+    def _check_editorial_facts(self, report: ContentQualityReport, title: str, content: str) -> None:
+        text = f"{title}\n{content}"
+        matches: list[dict[str, str]] = []
+        for rule in self.facts.editorial_fact_rules():
+            try:
+                matched = re.search(rule["pattern"], text)
+            except re.error as exc:
+                raise ValueError(f"Invalid editorial fact rule '{rule['id']}': {exc}") from exc
+            if matched:
+                matches.append(
+                    {
+                        "id": rule["id"],
+                        "match": matched.group(0),
+                        "message": rule["message"],
+                    }
+                )
+        report.checks["editorial_fact_matches"] = matches
+        for match in matches:
+            report.add_error(
+                f"专业事实校验失败（{match['id']}）：{match['message']} 匹配内容：{match['match']}",
                 40,
             )
 

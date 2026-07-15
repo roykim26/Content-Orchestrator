@@ -713,15 +713,18 @@ Context:
     ) -> str:
         target_url = str(target_url or "").strip()
         platform_key = str(platform or "").strip().lower()
-        tracked_platforms = {"note", "ameba", "hatena", "zenn", "x", "bluesky"}
-        if not target_url or platform_key not in tracked_platforms:
+        if not target_url:
+            return target_url
+        if platform_key in {"x", "bluesky"}:
+            return ArtifactEngine._strip_utm_parameters(target_url)
+        tracked_platforms = {"note", "ameba", "hatena", "zenn"}
+        if platform_key not in tracked_platforms:
             return target_url
         parsed = urlsplit(target_url)
-        tracked_keys = {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
         query_items = [
             (key, value)
             for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-            if key not in tracked_keys
+            if not key.lower().startswith("utm_")
         ]
         query_items.append(("utm_source", platform_key))
         query_items.append(("utm_medium", "referral"))
@@ -729,6 +732,16 @@ Context:
             query_items.append(("utm_campaign", campaign))
         if content_id:
             query_items.append(("utm_content", content_id))
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
+
+    @staticmethod
+    def _strip_utm_parameters(url: str) -> str:
+        parsed = urlsplit(str(url or "").strip())
+        query_items = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+        ]
         return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
 
     def _tracked_url_for_row(self, row: dict[str, Any], *, platform: str) -> str:
@@ -875,16 +888,15 @@ Context:
             target_parts.fragment,
         ):
             return False
-        tracking_keys = {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
         url_query = [
             (key, value)
             for key, value in parse_qsl(url_parts.query, keep_blank_values=True)
-            if key not in tracking_keys
+            if not key.lower().startswith("utm_")
         ]
         target_query = [
             (key, value)
             for key, value in parse_qsl(target_parts.query, keep_blank_values=True)
-            if key not in tracking_keys
+            if not key.lower().startswith("utm_")
         ]
         return url_query == target_query
 

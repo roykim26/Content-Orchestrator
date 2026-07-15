@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-14",
+  "version": "2026-07-15",
   "brand": "Ukamiru",
   "canonical_home": "https://www.ukamiru.jp/",
   "verified_capabilities": [
@@ -20,6 +20,49 @@
     "合格を保証",
     "必ず合格",
     "公式認定"
+  ],
+  "verified_editorial_facts": [
+    "宅地建物取引主任者は旧称であり、2015年4月1日以降の現行名称は宅地建物取引士である",
+    "35条書面・37条書面に関する宅地建物取引士の押印義務は2022年5月18日に廃止されている",
+    "法令・制度・試験日程・合格率を扱う記事は、公開前に最新版の検証済み公的情報パックによる独立事実審査を行う"
+  ],
+  "verified_editorial_sources": [
+    {
+      "id": "mlit-takken-title-2015",
+      "url": "https://www.mlit.go.jp/totikensangyo/const/sosei_const_tk3_000106.html",
+      "authority": "国土交通省",
+      "facts": [
+        "2015年4月1日から『宅地建物取引主任者』は『宅地建物取引士』に改称された"
+      ]
+    },
+    {
+      "id": "mlit-digital-documents-2022",
+      "url": "https://www.mlit.go.jp/report/press/tochi_fudousan_kensetsugyo16_hh_000001_00036.html",
+      "authority": "国土交通省",
+      "facts": [
+        "宅地建物取引士の押印廃止と重要事項説明書・契約締結時書面等の電子化は2022年5月18日に施行された"
+      ]
+    }
+  ],
+  "legal_review_terms": [
+    "宅建業法",
+    "35条書面",
+    "37条書面",
+    "民法",
+    "契約不適合責任",
+    "法改正"
+  ],
+  "editorial_fact_rules": [
+    {
+      "id": "obsolete_takken_agent_title",
+      "pattern": "宅地建物取引主任者|宅建取引主任者|取引主任者",
+      "message": "旧称『宅地建物取引主任者』ではなく、現行名称『宅地建物取引士』を使用してください。"
+    },
+    {
+      "id": "obsolete_35_37_seal_requirement",
+      "pattern": "(?:35条書面|37条書面)[^。\\n]{0,60}(?:記名押印(?:し|する|が必要|を行)|押印(?:し|する|が必要|を行))",
+      "message": "35条書面・37条書面について宅建士の押印を現行義務として説明できません。押印義務は2022年5月18日に廃止されています。"
+    }
   ],
   "exam_routes": {
     "ITパスポート": "https://itpass.ukamiru.jp/",
@@ -55,7 +98,8 @@
   },
   "manual_review_topic_clusters": [
     "exam_module_launch",
-    "ukamiru_brand_awareness"
+    "ukamiru_brand_awareness",
+    "compliance_support"
   ],
   "manual_review_terms": [
     "新機能",
@@ -69,6 +113,11 @@
     "法改正",
     "試験日程",
     "合格率",
-    "統計"
+    "統計",
+    "宅建業法",
+    "35条書面",
+    "37条書面",
+    "民法",
+    "契約不適合責任"
   ]
 }

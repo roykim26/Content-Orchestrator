@@ -15,6 +15,7 @@ from app.models.distribution_task import DistributionTask
 from app.models.publish_run import PublishRun
 from app.models.topic import Topic
 from app.services.artifact_service import ArtifactService
+from app.services.artifact_fact_review_service import ArtifactFactReviewService
 from app.services.feishu_topic_sync_service import FeishuTopicSyncError, FeishuTopicSyncService
 from app.services.publisher_service import PublisherService
 from app.services.task_service import TaskService
@@ -157,6 +158,7 @@ class PublishAutopilotService:
         self.topic_service = TopicService(session)
         self.task_service = TaskService(session)
         self.artifact_service = ArtifactService(session)
+        self.fact_review_service = ArtifactFactReviewService(session)
         self.publisher_service = PublisherService(session)
 
     def run_all(
@@ -283,6 +285,8 @@ class PublishAutopilotService:
 
             self._set_stage(run, "ensure_queue")
             artifact = self._find_publish_pending_artifact(lane)
+            if artifact is None:
+                artifact = self._review_pending_artifact(lane, dry_run=dry_run)
             if artifact is None:
                 self._sync_feishu_topics(summary, topic_limit=topic_limit, dry_run=dry_run)
                 artifact = self._generate_next_artifact(lane, dry_run=dry_run)
@@ -529,11 +533,15 @@ class PublishAutopilotService:
             artifact = self.artifact_service.get_artifact(artifact_id)
             if not artifact:
                 continue
-            if artifact.status == "review_pending" or self.artifact_service.requires_manual_review(artifact):
+            needs_trusted_review = (
+                self.artifact_service.requires_manual_review(artifact)
+                and not self.artifact_service.has_trusted_fact_review(artifact)
+            )
+            if artifact.status == "review_pending" or needs_trusted_review:
                 if artifact.status != "review_pending":
                     self.artifact_service.defer_for_review(
                         artifact,
-                        "Manual review required by product/editorial policy.",
+                        "Trusted fact review required by product/editorial policy.",
                     )
                 continue
             if artifact.status != "publish_pending":
@@ -626,13 +634,35 @@ class PublishAutopilotService:
             if lane.account:
                 if not self._artifact_matches_lane_account(artifact, lane):
                     continue
-            if self.artifact_service.requires_manual_review(artifact):
+            if (
+                self.artifact_service.requires_manual_review(artifact)
+                and not self.artifact_service.has_trusted_fact_review(artifact)
+            ):
                 self.artifact_service.defer_for_review(
                     artifact,
-                    "Manual review required by product/editorial policy.",
+                    "Trusted fact review required by product/editorial policy.",
                 )
                 continue
             return artifact
+        return None
+
+    def _review_pending_artifact(self, lane: PublishLane, *, dry_run: bool) -> ContentArtifact | None:
+        statement = (
+            select(ContentArtifact)
+            .where(ContentArtifact.platform == lane.platform)
+            .where(ContentArtifact.status == "review_pending")
+            .order_by(ContentArtifact.created_at.asc())
+        )
+        artifacts = list(self.session.exec(statement).all())
+        for artifact in artifacts:
+            if lane.account and not self._artifact_matches_lane_account(artifact, lane):
+                continue
+            if dry_run:
+                return artifact
+            reviewed = self.fact_review_service.review_artifact(artifact.id)
+            if reviewed and reviewed.status == "publish_pending":
+                self._assign_lane_account(reviewed, lane)
+                return reviewed
         return None
 
     @classmethod

@@ -306,11 +306,17 @@ class FeishuTopicSyncService:
 
         status = (payload.status or "").strip() or ("published" if payload.published else "failed")
         url = payload.published_url or artifact.published_url or ""
+        account = (
+            artifact.extra_metadata.get("account")
+            or artifact.extra_metadata.get("note_account")
+            or topic.note_account
+            or "-"
+        )
         text = "\n".join(
             [
                 "Content Orchestrator 发布结果通知",
                 f"平台：{artifact.platform}",
-                f"账号：{artifact.extra_metadata.get('note_account') or topic.note_account or '-'}",
+                f"账号：{account}",
                 f"状态：{status}",
                 f"主题：{topic.master_topic}",
                 f"关键词：{topic.target_keyword}",

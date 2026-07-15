@@ -67,7 +67,7 @@ class ArtifactEngineTargetLinkTests(unittest.TestCase):
         self.assertNotIn("http", content)
         self.assertLessEqual(self.engine._x_weighted_length(content), 280)
 
-    def test_bluesky_receives_one_tracked_raw_url(self) -> None:
+    def test_bluesky_receives_one_clean_raw_url_without_utm(self) -> None:
         result = ("十分な長さのテストタイトル", "編集用サマリー", "今日の問題演習を振り返り、弱点を一つだけ整理してみましょう。")
 
         for platform, max_length in (("bluesky", 300),):
@@ -77,12 +77,10 @@ class ArtifactEngineTargetLinkTests(unittest.TestCase):
                     self._payload(platform),
                     self.topic,
                 )
-                expected = (
-                    f"https://www.ukamiru.jp/?utm_source={platform}"
-                    "&utm_medium=referral&utm_campaign=traffic_reach&utm_content=topic_ukamiru"
-                )
+                expected = "https://www.ukamiru.jp/"
                 self.assertEqual(content.count(expected), 1)
                 self.assertTrue(content.endswith(expected))
+                self.assertNotIn("utm_", content)
                 self.assertLessEqual(len(content), max_length)
 
     def test_social_post_replaces_existing_target_url_without_duplication(self) -> None:
@@ -95,7 +93,22 @@ class ArtifactEngineTargetLinkTests(unittest.TestCase):
         _, _, content = self.engine._postprocess_generated_result(result, self._payload("bluesky"), self.topic)
 
         self.assertNotIn("utm_source=old", content)
-        self.assertEqual(content.count("https://www.ukamiru.jp/?utm_source=bluesky"), 1)
+        self.assertNotIn("utm_", content)
+        self.assertEqual(content.count("https://www.ukamiru.jp/"), 1)
+
+    def test_social_url_removes_all_utm_parameters_and_preserves_other_query_values(self) -> None:
+        clean = self.engine._build_tracked_target_url(
+            target_url=(
+                "https://ukamiru.jp/start?campaign=summer&utm_source=old&"
+                "utm_custom=remove-me&view=compact"
+            ),
+            platform="bluesky",
+        )
+
+        self.assertEqual(
+            clean,
+            "https://ukamiru.jp/start?campaign=summer&view=compact",
+        )
 
     def test_tracking_preserves_existing_query_parameters(self) -> None:
         tracked = self.engine._build_tracked_target_url(

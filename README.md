@@ -18,9 +18,24 @@ Before publishing, the quality gate checks:
 - high cross-platform similarity for the same topic.
 
 Artifacts scoring below 75 or containing blocking errors remain in `review_pending`.
-Product launches, new features, usage guides, legal/statistical claims, and configured
-high-risk clusters require a named human reviewer. The publisher claim path repeats the
-quality check so `publish_pending` cannot bypass the gate.
+All long-form artifacts receive an independent automated fact review. Product launches,
+new features, usage guides, legal/statistical claims, and configured high-risk clusters
+can enter `publish_pending` only when a trusted reviewer bot returns a structured report,
+scores at least 90, has no blocking or unverifiable claims, and cites a verified official
+source ID when legal/regulatory content is present. Failed reviews are repaired and
+re-reviewed up to two times; unresolved artifacts become `rejected` and are not published.
+The publisher claim path repeats both the quality and trusted-review checks so changing
+`reviewed_by` alone cannot bypass the gate.
+
+Run automated review for a stored artifact:
+
+```http
+POST /artifacts/{artifact_id}/fact-review
+```
+
+Review settings are controlled by `FACT_REVIEW_*` environment variables. The default
+trusted reviewer is `fact-review-bot-v1`; verified facts and official source IDs live in
+`app/content_facts/ukamiru_product_facts.json`.
 
 Audit existing artifacts without changing them:
 

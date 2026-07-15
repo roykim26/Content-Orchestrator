@@ -64,6 +64,42 @@ class ContentQualityServiceTests(unittest.TestCase):
             "https://itpass.ukamiru.jp/",
         )
 
+    def test_blocks_obsolete_takken_agent_title(self) -> None:
+        topic = self.topic.model_copy(
+            update={
+                "master_topic": "宅建業法の37条書面を覚える方法",
+                "topic_cluster": "takken_exam_prep",
+                "target_keyword": "宅建 37条書面 覚え方",
+            }
+        )
+        report = self.service.evaluate(
+            title="35条書面と37条書面の違い",
+            content="35条書面は宅地建物取引主任者が記名押印します。",
+            topic=topic,
+            platform="ameba",
+        )
+
+        self.assertTrue(report.publish_blocked)
+        match_ids = {item["id"] for item in report.checks["editorial_fact_matches"]}
+        self.assertIn("obsolete_takken_agent_title", match_ids)
+        self.assertIn("obsolete_35_37_seal_requirement", match_ids)
+
+    def test_takken_law_content_requires_manual_review(self) -> None:
+        topic = self.topic.model_copy(
+            update={
+                "master_topic": "宅建業法の37条書面を復習する方法",
+                "topic_cluster": "takken_exam_prep",
+            }
+        )
+
+        self.assertTrue(self.service.facts.requires_manual_review(topic))
+
+    def test_prompt_includes_current_takken_editorial_facts(self) -> None:
+        context = self.service.facts.prompt_context("ameba")
+
+        self.assertIn("現行名称は宅地建物取引士", context)
+        self.assertIn("押印義務は2022年5月18日に廃止", context)
+
 
 if __name__ == "__main__":
     unittest.main()

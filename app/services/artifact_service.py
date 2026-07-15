@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.core.exceptions import InvalidStateError
+from app.core.config import settings
 from app.models.artifact import (
     ArtifactPerformanceUpdate,
     ArtifactRequeueRequest,
@@ -131,6 +132,32 @@ class ArtifactService:
             content=artifact.content,
         )
 
+    @staticmethod
+    def trusted_fact_reviewer_ids() -> set[str]:
+        return {
+            item.strip()
+            for item in str(settings.trusted_fact_reviewer_ids or "").split(",")
+            if item.strip()
+        }
+
+    def has_trusted_fact_review(self, artifact: ContentArtifact) -> bool:
+        reviewer = str(artifact.reviewed_by or "").strip()
+        report = artifact.extra_metadata.get("fact_review_report")
+        if reviewer not in self.trusted_fact_reviewer_ids() or not isinstance(report, dict):
+            return False
+        try:
+            score = int(report.get("score", 0))
+        except (TypeError, ValueError):
+            return False
+        return (
+            artifact.reviewed
+            and str(report.get("reviewer") or "").strip() == reviewer
+            and str(report.get("decision") or "").strip() == "approved"
+            and not list(report.get("blocking_errors") or [])
+            and score >= settings.fact_review_min_score
+            and str(report.get("facts_version") or "") == self.content_quality.facts.version
+        )
+
     def defer_for_review(self, artifact: ContentArtifact, reason: str) -> ContentArtifact:
         artifact.status = "review_pending"
         artifact.reviewed = False
@@ -159,8 +186,8 @@ class ArtifactService:
         topic = self.session.get(Topic, artifact.topic_id)
         if not topic:
             raise InvalidStateError("Artifact topic is missing; content quality cannot be verified.")
-        if automated and self.requires_manual_review(artifact):
-            raise InvalidStateError("Artifact requires manual editorial review before publishing.")
+        if self.requires_manual_review(artifact) and not self.has_trusted_fact_review(artifact):
+            raise InvalidStateError("Artifact requires a trusted fact review before publishing.")
 
         comparisons = list(
             self.session.exec(
