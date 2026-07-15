@@ -3,6 +3,8 @@ from app.models.topic import Topic
 
 
 class DistributionEngine:
+    DISABLED_PLATFORMS = {"livedoor"}
+
     CONTENT_TYPE_MAP = {
         "note": ("article", "brand_awareness"),
         "ameba": ("article", "brand_awareness"),
@@ -19,6 +21,8 @@ class DistributionEngine:
     def build_plan(self, topic: Topic) -> list[PlannedDistribution]:
         plans: list[PlannedDistribution] = []
         for platform in topic.target_platforms:
+            if platform in self.DISABLED_PLATFORMS:
+                continue
             content_type, objective = self.CONTENT_TYPE_MAP.get(
                 platform,
                 ("article", "distribution"),

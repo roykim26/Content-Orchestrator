@@ -11,6 +11,7 @@ from app.models.artifact import ArtifactClaimRequest, ArtifactPublishResult, Con
 from app.integrations.publisher_client import PublisherClient
 from app.models.topic import Topic
 from app.platform_publishers.adapters import HatenaPublisher
+from app.platform_publishers.main import DEFAULT_LEGACY_ENV_PATH
 from app.services.publish_autopilot_service import PublishAutopilotService
 from app.services.feishu_topic_sync_service import FeishuTopicSyncService
 from app.services.publisher_service import PublisherService
@@ -306,6 +307,11 @@ class PublisherServiceTest(unittest.TestCase):
         self.assertIn("$apiLanes += $laneName", script)
         self.assertIn("$failed.Count -gt 0 -or $unavailableLanes.Count -gt 0", script)
 
+    def test_platform_publisher_starter_path_is_quoted(self) -> None:
+        script = (ROOT_DIR / "scripts" / "invoke-publish-autopilot.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('"`"$platformPublisherStarter`""', script)
+
     def test_orchestrator_starter_returns_without_terminating_parent_autopilot(self) -> None:
         script = (ROOT_DIR / "scripts" / "start-orchestrator-integrated-8020-once.ps1").read_text(
             encoding="utf-8"
@@ -331,6 +337,13 @@ class PublisherServiceTest(unittest.TestCase):
             PublishAutopilotService.LANES["hatena_a"].expected_health["app_instance_label"],
             "8221_orch_publish_platforms",
         )
+
+    def test_platform_publisher_legacy_env_uses_sibling_project(self) -> None:
+        legacy_env = Path(DEFAULT_LEGACY_ENV_PATH)
+
+        self.assertEqual(legacy_env.name, ".env")
+        self.assertEqual(legacy_env.parent.name, "zenn-bot")
+        self.assertEqual(legacy_env.parent.parent, ROOT_DIR.parent)
 
     def test_hatena_trigger_passes_lane_account(self) -> None:
         service = PublishAutopilotService.__new__(PublishAutopilotService)

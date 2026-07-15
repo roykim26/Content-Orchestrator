@@ -10,10 +10,12 @@ It exposes the health and trigger endpoints expected by `PublishAutopilotService
 By default, the service reuses the existing production publisher config from:
 
 ```text
-E:\yanque\海外投放\zenn-bot\.env
+<Content Orchestrator parent>\zenn-bot\.env
 ```
 
-Set `PLATFORM_PUBLISHER_ENV_PATH` only if that path changes.
+The default is resolved relative to the Content Orchestrator project, so it
+does not depend on the workspace path's display encoding. Set
+`PLATFORM_PUBLISHER_ENV_PATH` only if the sibling `zenn-bot` project moves.
 The service also loads the Content Orchestrator `.env` first, so internal
 settings such as `PUBLISHER_API_KEY` can stay in this repository.
 
@@ -37,9 +39,10 @@ Manual autopilot lanes:
 .\scripts\invoke-publish-autopilot.ps1 -Lane hatena_b
 ```
 
-`all` intentionally keeps the existing note/Ameba rollout. Add these lanes to
-`PUBLISH_AUTOPILOT_LANES` only after credentials have been configured and a
-manual run succeeds.
+Production `all` includes `zenn`, `hatena_a`, and `hatena_b`. The 8221 service
+reuses the verified credentials from the sibling `zenn-bot` project. Disable
+the legacy `zenn-bot` scheduler after the dry-run migration check succeeds to
+avoid duplicate publication.
 
 ## Shared Env
 
@@ -47,7 +50,7 @@ manual run succeeds.
 - `PUBLISHER_API_KEY`: must match Content Orchestrator when publisher auth is enabled
 - `ORCHESTRATOR_CONSUMER_NAME`: defaults to `platform-publisher-8221`
 - `PLATFORM_PUBLISHER_LOCAL_ENV_PATH`: defaults to `.env`
-- `PLATFORM_PUBLISHER_ENV_PATH`: defaults to `E:\yanque\海外投放\zenn-bot\.env`
+- `PLATFORM_PUBLISHER_ENV_PATH`: defaults to the sibling `zenn-bot\.env`
 
 ## Zenn Env
 

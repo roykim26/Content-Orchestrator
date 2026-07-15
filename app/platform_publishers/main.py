@@ -11,7 +11,7 @@ from app.integrations.publisher_worker import PublishOutcome
 from app.platform_publishers.adapters import HatenaPublisher, ZennPublisher
 
 
-DEFAULT_LEGACY_ENV_PATH = r"E:\yanque\海外投放\zenn-bot\.env"
+DEFAULT_LEGACY_ENV_PATH = str(Path(__file__).resolve().parents[2].parent / "zenn-bot" / ".env")
 DEFAULT_LOCAL_ENV_PATH = ".env"
 
 

@@ -154,7 +154,7 @@ function Ensure-PublisherLane {
         }
         Write-Log "Starting platform publisher on 8221 via $platformPublisherStarter."
         Start-Process powershell.exe `
-            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $platformPublisherStarter) `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$platformPublisherStarter`"") `
             -WorkingDirectory $root `
             -WindowStyle Hidden | Out-Null
 
